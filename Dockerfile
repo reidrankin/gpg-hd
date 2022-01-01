@@ -4,20 +4,18 @@ RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive \
     apt-get install -y \
     gpg \
+    libffi-dev \
     monkeysphere \
-    python-is-python2 \
-    pipenv
+    pipenv \
+    python-is-python3 \
+    scdaemon
 
-ENV HOME /home/deterministic
-RUN useradd -m -s /bin/bash deterministic
-
-WORKDIR /home/deterministic
-WORKDIR /home/deterministic/gpg-hd
-COPY . .
+WORKDIR /gpg-hd
 RUN mkdir -p keys
-RUN chown -R deterministic:deterministic /home/deterministic
-USER deterministic
-
+COPY ./Pipfile ./Pipfile.lock ./
+RUN chown -R root:root ./
 ENV LANG C
-RUN pipenv install --deploy
-ENTRYPOINT ["pipenv", "run", "/home/deterministic/gpg-hd/gpg-hd"]
+RUN pipenv install --system --deploy
+COPY . .
+RUN chown -R root:root ./
+ENTRYPOINT ["./gpg-hd"]
