@@ -20,4 +20,4 @@ docker-test:
 	docker run \
 		--rm \
 		-v "$$PWD/keys:/home/deterministic/gpg-hd/keys" \
-		-it gpg-hd /home/deterministic/gpg-hd/gpg-hd "test seed" "test human" "test@test.com"
+		-it gpg-hd -n foo -e bar baz
