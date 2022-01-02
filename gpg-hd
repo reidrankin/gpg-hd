@@ -2,13 +2,14 @@
 
 # Special thanks to Arttu Kasvio's idea of using pem2openpgp / HMAC_DRBG
 
-import os
-import subprocess
-from Crypto.PublicKey import RSA
-import pexpect
 import argparse
-from bip85 import BIP85
-from bip85 import BIP85DRNG
+from bip85 import BIP85, BIP85DRNG
+from Crypto.PublicKey import RSA
+from mnemonic import Mnemonic
+import os
+import pexpect
+from pycoin.symbols.btc import network as BTC
+import subprocess
 
 gpg_cmdline = "gpg --homedir temp --keyring trustedkeys.gpg --no-default-keyring --expert "
 subkey_cmdline = " --command-fd=0 --status-fd=1 --pinentry-mode=loopback --edit-key "
@@ -150,17 +151,18 @@ def GPG_card_write(keyID, sign_with_master):
 
 
 if __name__ == '__main__':
-  os.system("rm -rf temp *.asc keys/* > /dev/null 2>&1")
-  os.system("killall gpg-agent scdaemon ssh-agent > /dev/null 2>&1")
-  print("\n")
   parser = argparse.ArgumentParser()
-  parser.add_argument("mnemonic", type=str, help="BIP39 mnemonic phrase")
-  parser.add_argument("-n", "--name", help="Full Name")
-  parser.add_argument("-e", "--email", help="Email")
+
+  parser.add_argument("-b", "--key-bits", type=int, default=4096, help="number of bits for each RSA key (default: 4096)")
+  parser.add_argument("-i", "--key-index", type=int, default=0, help="index of derived key")
   parser.add_argument("-c", "--card", help="Write subkeys to Yubikey", action="store_true")
   parser.add_argument("-s", "--sign-with-master", help="Use the master key to SIGN as well as CERTIFY, instead of creating a separate signature subkey", action="store_true")
-  parser.add_argument("-b", "--key-bits", help="number of bits for each RSA key")
-  parser.add_argument("-i", "--key-index", help="number of bits for each RSA key")
+
+  parser.add_argument("-n", "--name", help="Full Name")
+  parser.add_argument("-e", "--email", help="Email")
+  parser.add_argument("-m", "--mnemonic", help="BIP39 mnemonic phrase")
+  parser.add_argument("-p", "--passphrase", help="BIP39 passphrase")
+
   args = parser.parse_args()
 
   if (args.name):
@@ -182,35 +184,37 @@ if __name__ == '__main__':
   sign_with_master = False
   if (args.sign_with_master):
     sign_with_master = True
-  key_bits = 4096
-  if (args.key_bits):
-    key_bits = int(args.key_bits)
-  key_index = 0
-  if (args.key_index):
-    key_index = int(args.key_index)
   if (args.mnemonic):
     mnemonic = str(args.mnemonic)
   else:
     mnemonic = input('Mnemonic: ')
   user_id = '%s <%s>' % (name, email)
 
+  if not Mnemonic("english").check(mnemonic=mnemonic):
+    print('WARNING: mnemonic looks invalid!')
+
+  bip39_seed = Mnemonic.to_seed(mnemonic, passphrase='')
+  xprv = BTC.keys.bip32_seed(bip39_seed).subkey_for_path("83696968'/828365'/%d'/%d'" % (args.key_bits, args.key_index)).hwif(as_private=True)
+
   bip85 = BIP85()
-  masterkey_path = "m/83696968'/828365'/" + str(key_bits) + "'/" + str(key_index) + "'"
-  masterkey_seed = bip85.bip39_mnemonic_to_entropy(masterkey_path, mnemonic)
-  enckey_seed = bip85.bip39_mnemonic_to_entropy(masterkey_path + "/0'", mnemonic)
-  authkey_seed = bip85.bip39_mnemonic_to_entropy(masterkey_path + "/1'", mnemonic)
-  if not sign_with_master: sigkey_seed = bip85.bip39_mnemonic_to_entropy(masterkey_path + "/2'", mnemonic)
+  masterkey_seed = bip85.bip32_xprv_to_entropy("", xprv)
+  enckey_seed = bip85.bip32_xprv_to_entropy("0'", xprv)
+  authkey_seed = bip85.bip32_xprv_to_entropy("1'", xprv)
+  if not sign_with_master: sigkey_seed = bip85.bip32_xprv_to_entropy("2'", xprv)
 
   timestamp = "1231006505"
 
+  os.system("rm -rf temp *.asc keys/* > /dev/null 2>&1")
+  os.system("killall gpg-agent scdaemon ssh-agent > /dev/null 2>&1")
+
   # Create master CA key
-  GPG_create_key(user_id, masterkey_seed, key_bits, timestamp)
+  GPG_create_key(user_id, masterkey_seed, args.key_bits, timestamp)
   masterkeyID = GPG_get_masterkey()
 
   # Create 3 subkeys
-  GPG_create_key(user_id, enckey_seed, key_bits, timestamp)
-  GPG_create_key(user_id, authkey_seed, key_bits, timestamp)
-  if not sign_with_master: GPG_create_key(user_id, sigkey_seed, key_bits, timestamp)
+  GPG_create_key(user_id, enckey_seed, args.key_bits, timestamp)
+  GPG_create_key(user_id, authkey_seed, args.key_bits, timestamp)
+  if not sign_with_master: GPG_create_key(user_id, sigkey_seed, args.key_bits, timestamp)
 
   # GPG needs grips for moving to subkeys
   keygrips = GPG_get_keygrips()

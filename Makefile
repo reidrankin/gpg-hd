@@ -21,4 +21,4 @@ docker-test:
 	docker run \
 		--rm \
 		-v "$$PWD/keys:/gpg-hd/keys" \
-		-it gpg-hd -n foobar -e bazbar --sign-with-master "install scatter logic circle pencil average fall shoe quantum disease suspect usage"
+		-it gpg-hd --name foo --email bar --sign-with-master --mnemonic "install scatter logic circle pencil average fall shoe quantum disease suspect usage"
